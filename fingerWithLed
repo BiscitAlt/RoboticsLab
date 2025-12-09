@@ -1,0 +1,99 @@
+import mediapipe as mp
+import cv2
+import pyfirmata2
+
+mp_drawing = mp.solutions.drawing_utils
+mp_drawing_styles = mp.solutions.drawing_styles
+mp_hands = mp.solutions.hands
+
+cap = cv2.VideoCapture(0)
+
+fingerUp = ''
+
+board = pyfirmata2.Arduino('COM3')
+
+ledi = [
+    board.get_pin('d:5:o'),
+    board.get_pin('d:6:o'),
+    board.get_pin('d:7:o'),
+    board.get_pin('d:8:o'),
+    board.get_pin('d:9:o')]
+    
+def count_fingers(hand_landmarks):
+
+    fingers = []
+    
+    if hand_landmarks.landmark[4].x > hand_landmarks.landmark[3].x:
+        fingers.append('Thumb')
+    
+    if hand_landmarks.landmark[8].y < hand_landmarks.landmark[6].y:
+        fingers.append('Index')
+    
+    if hand_landmarks.landmark[12].y < hand_landmarks.landmark[10].y:
+        fingers.append('Middle')
+    
+    if hand_landmarks.landmark[16].y < hand_landmarks.landmark[14].y:
+        fingers.append('Ring')
+    
+    if hand_landmarks.landmark[20].y < hand_landmarks.landmark[18].y:
+        fingers.append('Pinky')
+    
+    return fingers
+
+with mp_hands.Hands(
+    model_complexity=0,
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5) as hands:
+  while cap.isOpened():
+    success, image = cap.read()
+    if not success:
+      break
+  
+    imageRgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    results = hands.process(imageRgb)
+    
+    if results.multi_hand_landmarks:
+      for hand_landmarks in results.multi_hand_landmarks:
+        mp_drawing.draw_landmarks(
+            image,
+            hand_landmarks,
+            mp_hands.HAND_CONNECTIONS,
+            mp_drawing_styles.get_default_hand_landmarks_style(),
+            mp_drawing_styles.get_default_hand_connections_style())
+
+        fingers = count_fingers(hand_landmarks)
+    
+        if fingers:
+            fingerUp = ', '.join(fingers)
+        else:
+            fingerUp = 'No fingers up'
+            
+        for i in range(len(ledi)):
+            if i < len(fingers):
+                ledi[i].write(1)
+            else:
+                ledi[i].write(0)
+        
+    font = cv2.FONT_HERSHEY_PLAIN
+    thickness = 2
+    cv2.putText(
+        image,
+        fingerUp,
+        (0,60),
+        font,
+        3,
+        (169, 112, 74),
+        thickness,
+        cv2.LINE_AA),
+ 
+    cv2.imshow('Q to exit', image)
+    
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+      break
+
+for i in range(len(ledi)):
+    if i <= len(ledi):
+        ledi[i].write(0)
+cap.release()
+cv2.destroyAllWindows()
+board.exit()
